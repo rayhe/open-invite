@@ -120,7 +120,7 @@
       stat(c.declined, "Declined") + stat(c.pending, "Pending") + "</div>";
     html += '<p class="muted center">Expected heads (incl. +1s): <b>' + c.heads + "</b> · " + guests.length + " invited</p>";
 
-    // Delivery analytics funnel (Paperless Post-style tracking page)
+    // Delivery analytics funnel (per-guest tracking page)
     var f = funnel();
     if (f.sent > 0) {
       html += '<div class="card"><h2>Invitation funnel</h2>' +
@@ -159,8 +159,8 @@
         var s = g.rsvpStatus || "pending";
         html += "<tr><td>" + OI.esc(g.name) + "</td>";
         if (isOwner) {
-          // Manual status override (Paperless Post lets hosts set this too,
-          // e.g. when someone replies by text instead of clicking the link)
+          // Manual status override (e.g. when someone replies by text
+          // instead of clicking the link)
           html += '<td><select data-status="' + g.id + '" style="font-size:13px;padding:4px;">' +
             ["pending", "accepted", "maybe", "declined"].map(function (o) {
               return '<option value="' + o + '"' + (o === s ? " selected" : "") + ">" + o + "</option>";

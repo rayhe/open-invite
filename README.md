@@ -1,6 +1,6 @@
 # OpenInvite
 
-Open-source digital invitations. A self-hosted [Paperless Post](https://www.paperlesspost.com) clone built on **Firebase + Resend**.
+Open-source digital invitations. An open invitation platform built on **Firebase + Resend** — design it, send it, track who's coming.
 
 Create beautiful event invitations, email them to your guest list, and track RSVPs in real time. No per-invite fees, no ad trackers. Your data stays in your Firebase project.
 
@@ -10,7 +10,7 @@ Create beautiful event invitations, email them to your guest list, and track RSV
 - **Cover art** — upload a photo or have Muse generate one; it appears on the email, RSVP page, and dashboard
 - **Guest list** — add guests manually or import CSV; each guest gets a unique, unguessable RSVP link
 - **Email invitations via Resend** — themed HTML emails with one-tap RSVP buttons
-- **Delivery analytics** — Paperless Post-style tracking page: Sent → Delivered → Opened → Link visited → Responded, per guest, powered by Resend webhooks
+- **Delivery analytics** — per-guest tracking page: Sent → Delivered → Opened → Link visited → Responded, powered by Resend webhooks
 - **RSVP pages** — accept / decline / maybe, party size, dietary notes, message to host, add-to-calendar (.ics download)
 - **Host dashboard** — live counts, per-guest status + tracking, manual status override (for text replies), resend individual invites, nudge non-responders, export CSV
 - **Muse orchestration** — run the whole flow from chat with `scripts/admin.js` (see `~/workspace/skills/open-invite/SKILL.md`)
@@ -158,7 +158,7 @@ A full runbook lives in `~/workspace/skills/open-invite/SKILL.md`. Guardrail: ne
 - [x] Delivery/open analytics via Resend webhooks
 - [ ] Google sign-in for hosts (upgrade from anonymous auth)
 - [ ] Recurring reminders / auto-nudge schedule
-- [ ] Shareable links (Paperless Post has these; explicitly untracked)
+- [ ] Shareable links (explicitly untracked, for texting/social)
 - [ ] Guest messaging (message all / message non-responders)
 - [ ] Guest tags for list segmentation
 - [ ] SMS invites via a second provider
@@ -166,7 +166,7 @@ A full runbook lives in `~/workspace/skills/open-invite/SKILL.md`. Guardrail: ne
 
 ## Why open-source this?
 
-Paperless Post charges per invite pack and locks your guest list in their silo. OpenInvite costs ~$0 at family scale, tracks only what the host needs (delivery + opens, disclosed in the email), and the whole thing fits in one repo you can read in an afternoon.
+Closed invitation platforms charge per invite pack and lock your guest list in their silo. OpenInvite costs ~$0 at family scale, tracks only what the host needs (delivery + opens, disclosed in the email), and the whole thing fits in one repo you can read in an afternoon.
 
 ## License
 

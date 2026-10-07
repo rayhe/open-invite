@@ -7,7 +7,7 @@
 
 ## What this is
 
-Open-source digital invitations — a self-hosted Paperless Post clone.
+Open-source digital invitations — an open invitation platform.
 **Stack:** Firebase Hosting (static frontend) + Firestore + Cloud Functions (Node 20) + Resend (email) + Firebase Storage (cover art).
 
 Live repo: https://github.com/rayhe/open-invite
