@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>You're invited — OpenInvite</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-theme="confetti">
+<nav class="top">
+  <a class="logo" href="/">Open<span>Invite</span></a>
+</nav>
+
+<div class="wrap" id="app">
+  <p class="muted center">Loading your invitation…</p>
+</div>
+
+<script src="/firebase-config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="/app.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var eventId = q.get("e"), guestId = q.get("g"), token = q.get("t");
+  var app = document.getElementById("app");
+  if (!eventId || !guestId || !token) {
+    app.innerHTML = '<div class="card center"><h2>Invalid invitation link</h2><p class="muted">This link looks incomplete. Ask your host to resend it.</p></div>';
+    return;
+  }
+
+  var ev = null, guest = null;
+  OI.initFirebase();
+  // Anonymous sign-in so Firestore rules see an authenticated user.
+  OI.ensureHost().then(function () {
+    return OI.db.collection("events").doc(eventId).get();
+  }).then(function (doc) {
+    if (!doc.exists) throw new Error("notfound");
+    ev = Object.assign({ id: doc.id }, doc.data());
+    return OI.db.collection("events").doc(eventId).collection("guests").doc(guestId).get();
+  }).then(function (doc) {
+    if (!doc.exists || doc.data().token !== token) throw new Error("badlink");
+    guest = Object.assign({ id: doc.id }, doc.data());
+    OI.applyTheme(ev.theme);
+    render();
+  }).catch(function () {
+    app.innerHTML = '<div class="card center"><h2>Link not recognized</h2><p class="muted">This invitation link is invalid or expired. Ask your host to resend it.</p></div>';
+  });
+
+  function render() {
+    var t = OI.THEMES[ev.theme] || OI.THEMES.confetti;
+    var responded = guest.rsvpStatus && guest.rsvpStatus !== "pending";
+    var html = '<div class="invite-card">' +
+      '<div class="invite-hero" style="background:linear-gradient(135deg,' + t.bg + "," + t.bg2 + ')">' +
+      "<h1>" + OI.esc(ev.title) + "</h1><div>" + OI.esc(ev.hostName || "") + "</div></div>" +
+      '<div class="invite-body">' +
+      '<div class="detail"><span class="k">When</span><span>' + OI.esc(OI.fmtDate(ev.startsAt) + " at " + OI.fmtTime(ev.startsAt)) + "</span></div>" +
+      (ev.location ? '<div class="detail"><span class="k">Where</span><span>' + OI.esc(ev.location) +
+        (ev.locationUrl ? ' · <a href="' + OI.esc(ev.locationUrl) + '" target="_blank" rel="noopener">map</a>' : "") + "</span></div>" : "") +
+      (ev.description ? "<p>" + OI.esc(ev.description) + "</p>" : "") +
+      (ev.rsvpDeadline ? '<p class="muted">Please respond by ' + OI.esc(OI.fmtDate(ev.rsvpDeadline)) + ".</p>" : "") +
+      "</div></div>";
+
+    html += '<div class="card"><h2>Hi ' + OI.esc(guest.name.split(" ")[0]) + ' — will you join us?</h2>';
+
+    if (responded) {
+      html += '<p><span class="pill ' + guest.rsvpStatus + '">' + guest.rsvpStatus + "</span></p>" +
+        '<p class="muted">You responded ' + guest.rsvpStatus + ". Changed your mind? Pick again below.</p>";
+    }
+
+    html += '<div class="rsvp-choices">' +
+      '<button class="btn" data-rsvp="accepted">Joyfully accept</button>' +
+      (ev.allowMaybe === false ? "" : '<button class="btn secondary" data-rsvp="maybe">Maybe</button>') +
+      '<button class="btn secondary" data-rsvp="declined">Regretfully decline</button></div>';
+
+    if (ev.allowPlusOnes !== false) {
+      html += '<label>Bringing others? <span class="muted" style="font-weight:400">(besides yourself)</span></label>' +
+        '<div class="stepper"><button id="pMinus">−</button><b id="pCount">' + (guest.partySize || 0) + '</b><button id="pPlus">+</button></div>';
+    }
+    html += '<label>Dietary needs / notes <span class="muted" style="font-weight:400">(optional)</span></label>' +
+      '<input type="text" id="fDietary" maxlength="200" value="' + OI.esc(guest.dietary || "") + '" placeholder="Vegetarian, nut allergy…">' +
+      '<label>Message to the host <span class="muted" style="font-weight:400">(optional)</span></label>' +
+      '<input type="text" id="fMessage" maxlength="280" value="' + OI.esc(guest.message || "") + '" placeholder="Can't wait!">' +
+      "</div>";
+
+    html += '<div class="center"><button class="btn secondary small" id="btnICS">📅 Add to calendar (.ics)</button></div>';
+    app.innerHTML = html;
+
+    var partySize = guest.partySize || 0;
+    function paint() { document.getElementById("pCount").textContent = partySize; }
+    var pm = document.getElementById("pMinus"), pp = document.getElementById("pPlus");
+    if (pm) pm.onclick = function () { partySize = Math.max(0, partySize - 1); paint(); };
+    if (pp) pp.onclick = function () { partySize = Math.min(10, partySize + 1); paint(); };
+
+    document.querySelectorAll("[data-rsvp]").forEach(function (b) {
+      b.onclick = function () { respond(b.getAttribute("data-rsvp")); };
+    });
+    document.getElementById("btnICS").onclick = function () { OI.downloadICS(ev); };
+  }
+
+  function respond(status) {
+    var ref = OI.db.collection("events").doc(eventId).collection("guests").doc(guestId);
+    var partyEl = document.getElementById("pCount");
+    ref.update({
+      token: token, // echo: proves the writer holds the invite link
+      rsvpStatus: status,
+      partySize: partyEl ? parseInt(partyEl.textContent, 10) || 0 : 0,
+      dietary: document.getElementById("fDietary").value.trim(),
+      message: document.getElementById("fMessage").value.trim(),
+      respondedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(function () {
+      guest.rsvpStatus = status;
+      render();
+      OI.toast(status === "accepted" ? "You're in! See you there 🎉" :
+               status === "declined" ? "Thanks for letting us know." : "Marked as maybe.");
+      window.scrollTo(0, 0);
+    }).catch(function (e) { OI.toast("Couldn't save: " + e.message); });
+  }
+})();
+</script>
+</body>
+</html>

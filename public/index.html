@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenInvite — beautiful invitations, minus the fees</title>
+<meta name="description" content="Open-source digital invitations on Firebase + Resend. No per-invite fees, no tracking pixels.">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-theme="confetti">
+<nav class="top">
+  <a class="logo" href="/">Open<span>Invite</span></a>
+  <a class="btn small" href="/create.html">Create an invitation</a>
+</nav>
+
+<div class="hero">
+  <h1>Invitations without<br>the invoice.</h1>
+  <p>Design it, send it, track RSVPs — self-hosted on Firebase + Resend. No per-invite packs, no guest tracking, no ads. Free at family scale, forever.</p>
+  <a class="btn" href="/create.html">Create an invitation</a>
+</div>
+
+<div class="wrap">
+  <div class="features">
+    <div class="feature"><b>🎨 Design in minutes</b>Six themes, live preview, works on phones.</div>
+    <div class="feature"><b>✉️ Send via Resend</b>Beautiful HTML email, one-tap RSVP links.</div>
+    <div class="feature"><b>📊 Track RSVPs live</b>Counts, per-guest status, reminders, CSV export.</div>
+    <div class="feature"><b>🔒 Privacy-first</b>No tracking pixels, no analytics, guest emails never public.</div>
+    <div class="feature"><b>📅 Add to calendar</b>Guests get a one-click .ics download.</div>
+    <div class="feature"><b>🛠️ Open source (MIT)</b>Read the whole thing in an afternoon. Fork it.</div>
+  </div>
+
+  <div class="card" id="myEvents" style="display:none">
+    <h2>My events</h2>
+    <div id="myEventsList"><p class="muted">Loading…</p></div>
+  </div>
+
+  <div class="card">
+    <h2>How it works</h2>
+    <p><b>1.</b> Create an event and pick a theme.<br>
+       <b>2.</b> Add guests manually or import a CSV.<br>
+       <b>3.</b> Hit <b>Send invitations</b> — each guest gets a personal RSVP link by email.<br>
+       <b>4.</b> Watch RSVPs roll in on your dashboard. Nudge the stragglers.</p>
+    <p class="muted">Runs on your Firebase project and your Resend account. The demo key scope needed is send-only.</p>
+  </div>
+</div>
+
+<footer class="site">
+  OpenInvite is MIT-licensed open source. ·
+  <a href="https://github.com/rayhe/open-invite">GitHub</a>
+</footer>
+
+<script src="/firebase-config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
+<script src="/app.js"></script>
+<script>
+try {
+  OI.initFirebase();
+  OI.ensureHost().then(function (uid) {
+    return OI.db.collection("events").where("ownerUid", "==", uid)
+      .orderBy("createdAt", "desc").limit(20).get();
+  }).then(function (snap) {
+    if (snap.empty) return;
+    var box = document.getElementById("myEvents");
+    var list = document.getElementById("myEventsList");
+    box.style.display = "block";
+    list.innerHTML = "";
+    snap.forEach(function (d) {
+      var e = d.data();
+      var a = document.createElement("a");
+      a.href = "/event.html?id=" + d.id;
+      a.className = "btn secondary small";
+      a.style.margin = "4px";
+      a.textContent = (e.title || "Untitled") + " — " + OI.fmtDate(e.startsAt);
+      list.appendChild(a);
+    });
+  }).catch(function () { /* config missing or offline: stay quiet */ });
+} catch (e) { /* firebase-config.js not set up yet */ }
+</script>
+</body>
+</html>

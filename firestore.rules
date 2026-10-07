@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(eventId) {
+      return request.auth != null
+        && get(/databases/$(database)/documents/events/$(eventId)).data.ownerUid == request.auth.uid;
+    }
+
+    match /events/{eventId} {
+      // Published events are world-readable (RSVP pages need the details).
+      // Drafts are owner-only.
+      allow read: if resource.data.published == true || isOwner(eventId);
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isOwner(eventId);
+
+      match /guests/{guestId} {
+        // Guest docs carry name + RSVP status only — no contact info.
+        // Document IDs are unguessable, so public read is capability-safe.
+        allow read: if true;
+        allow create, delete: if isOwner(eventId);
+        // Guests update their own RSVP by echoing the secret token from
+        // their invite link; only RSVP fields may change.
+        allow update: if isOwner(eventId)
+          || (request.resource.data.token == resource.data.token
+              && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['rsvpStatus', 'partySize', 'dietary', 'message',
+                           'respondedAt', 'token']));
+
+        // Contact details (email/phone): owner-only.
+        match /private/contact {
+          allow read, write: if isOwner(eventId);
+        }
+      }
+    }
+  }
+}

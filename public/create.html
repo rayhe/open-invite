@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Create an invitation — OpenInvite</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-theme="confetti">
+<nav class="top">
+  <a class="logo" href="/">Open<span>Invite</span></a>
+  <a class="btn small secondary" href="/">← Home</a>
+</nav>
+
+<div class="wrap">
+  <h1>Create an invitation</h1>
+  <p class="muted">Fill in the details, pick a look, then add guests on the next screen.</p>
+
+  <div class="card">
+    <label>Event title</label>
+    <input type="text" id="fTitle" placeholder="Maya's 7th Birthday Party" maxlength="80">
+
+    <label>Your name (the host)</label>
+    <input type="text" id="fHost" placeholder="The He Family" maxlength="80">
+
+    <div class="row">
+      <div><label>Date</label><input type="date" id="fDate"></div>
+      <div><label>Time</label><input type="time" id="fTime" value="15:00"></div>
+    </div>
+
+    <label>Location</label>
+    <input type="text" id="fLocation" placeholder="Winter Lodge, Palo Alto" maxlength="120">
+    <label>Location link <span class="muted" style="font-weight:400">(Google Maps URL, optional)</span></label>
+    <input type="text" id="fLocationUrl" placeholder="https://maps.google.com/…" maxlength="300">
+
+    <label>Description</label>
+    <textarea id="fDesc" placeholder="Cake, games, and questionable dance moves. Siblings welcome!"></textarea>
+
+    <label>RSVP deadline <span class="muted" style="font-weight:400">(optional)</span></label>
+    <input type="date" id="fDeadline">
+
+    <div class="check"><input type="checkbox" id="fPlusOnes" checked><span>Allow guests to bring +1s</span></div>
+    <div class="check"><input type="checkbox" id="fMaybe" checked><span>Allow "Maybe" responses</span></div>
+
+    <label>Theme</label>
+    <div class="theme-grid" id="themeGrid"></div>
+
+    <div style="margin-top:28px">
+      <button class="btn" id="btnCreate">Continue → add guests</button>
+    </div>
+  </div>
+
+  <div class="card" id="previewCard" style="display:none">
+    <h2>Preview</h2>
+    <div class="invite-card">
+      <div class="invite-hero" id="pvHero"><h1 id="pvTitle"></h1><div id="pvHost"></div></div>
+      <div class="invite-body" id="pvBody"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/firebase-config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
+<script src="/app.js"></script>
+<script>
+(function () {
+  var theme = "confetti";
+  var grid = document.getElementById("themeGrid");
+  Object.keys(OI.THEMES).forEach(function (key) {
+    var t = OI.THEMES[key];
+    var d = document.createElement("div");
+    d.className = "theme-swatch" + (key === theme ? " selected" : "");
+    d.innerHTML = '<div class="dots">' + t.dots.map(function (c) {
+      return '<i style="background:' + c + '"></i>';
+    }).join("") + '</div>' + OI.esc(t.name);
+    d.onclick = function () {
+      theme = key;
+      OI.applyTheme(theme);
+      Array.prototype.forEach.call(grid.children, function (el) { el.classList.remove("selected"); });
+      d.classList.add("selected");
+      renderPreview();
+    };
+    grid.appendChild(d);
+  });
+
+  function val(id) { return document.getElementById(id).value.trim(); }
+
+  function renderPreview() {
+    var title = val("fTitle") || "Your event title";
+    var host = val("fHost") || "Hosted by you";
+    var t = OI.THEMES[theme];
+    document.getElementById("previewCard").style.display = "block";
+    var hero = document.getElementById("pvHero");
+    hero.style.background = "linear-gradient(135deg," + t.bg + "," + t.bg2 + ")";
+    document.getElementById("pvTitle").textContent = title;
+    document.getElementById("pvHost").textContent = host;
+    var dt = val("fDate") ? new Date(val("fDate") + "T" + (val("fTime") || "12:00")) : null;
+    document.getElementById("pvBody").innerHTML =
+      (dt ? '<div class="detail"><span class="k">When</span><span>' + OI.esc(dt.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })) + " at " + OI.esc(val("fTime") || "") + "</span></div>" : "") +
+      (val("fLocation") ? '<div class="detail"><span class="k">Where</span><span>' + OI.esc(val("fLocation")) + "</span></div>" : "") +
+      (val("fDesc") ? "<p>" + OI.esc(val("fDesc")) + "</p>" : "");
+  }
+  ["fTitle", "fHost", "fDate", "fTime", "fLocation", "fDesc"].forEach(function (id) {
+    document.getElementById(id).addEventListener("input", renderPreview);
+  });
+
+  document.getElementById("btnCreate").onclick = function () {
+    var btn = this;
+    if (!val("fTitle")) { OI.toast("Give your event a title first"); return; }
+    if (!val("fDate")) { OI.toast("Pick a date"); return; }
+    btn.disabled = true;
+    btn.textContent = "Creating…";
+    var startsAt = firebase.firestore.Timestamp.fromDate(
+      new Date(val("fDate") + "T" + (val("fTime") || "12:00")));
+    var deadline = val("fDeadline")
+      ? firebase.firestore.Timestamp.fromDate(new Date(val("fDeadline") + "T23:59")) : null;
+    OI.initFirebase();
+    OI.ensureHost().then(function (uid) {
+      return OI.db.collection("events").add({
+        title: val("fTitle"), hostName: val("fHost") || "",
+        startsAt: startsAt, location: val("fLocation"),
+        locationUrl: val("fLocationUrl"), description: val("fDesc"),
+        rsvpDeadline: deadline, allowPlusOnes: document.getElementById("fPlusOnes").checked,
+        allowMaybe: document.getElementById("fMaybe").checked,
+        theme: theme, published: true,
+        ownerUid: uid, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }).then(function (ref) {
+      location.href = "/event.html?id=" + ref.id;
+    }).catch(function (err) {
+      btn.disabled = false; btn.textContent = "Continue → add guests";
+      OI.toast("Couldn't create event: " + err.message);
+    });
+  };
+})();
+</script>
+</body>
+</html>

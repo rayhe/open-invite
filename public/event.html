@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Host dashboard — OpenInvite</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body data-theme="confetti">
+<nav class="top">
+  <a class="logo" href="/">Open<span>Invite</span></a>
+  <a class="btn small secondary" href="/">← Home</a>
+</nav>
+
+<div class="wrap" id="app">
+  <p class="muted">Loading event…</p>
+</div>
+
+<script src="/firebase-config.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
+<script src="/app.js"></script>
+<script>
+(function () {
+  var eventId = new URLSearchParams(location.search).get("id");
+  if (!eventId) { document.getElementById("app").innerHTML = "<p>Missing event id.</p>"; return; }
+
+  var ev = null, guests = [], uid = null, isOwner = false;
+  OI.initFirebase();
+
+  OI.ensureHost().then(function (u) {
+    uid = u;
+    return OI.db.collection("events").doc(eventId).get();
+  }).then(function (doc) {
+    if (!doc.exists) throw new Error("Event not found.");
+    ev = Object.assign({ id: doc.id }, doc.data());
+    isOwner = ev.ownerUid === uid;
+    OI.applyTheme(ev.theme);
+    render();
+    return OI.db.collection("events").doc(eventId).collection("guests")
+      .orderBy("createdAt").get();
+  }).then(function (snap) {
+    guests = [];
+    snap.forEach(function (d) { guests.push(Object.assign({ id: d.id }, d.data())); });
+    render();
+    // Live updates for RSVPs
+    OI.db.collection("events").doc(eventId).collection("guests")
+      .onSnapshot(function (snap) {
+        guests = [];
+        snap.forEach(function (d) { guests.push(Object.assign({ id: d.id }, d.data())); });
+        render();
+      });
+  }).catch(function (err) {
+    document.getElementById("app").innerHTML = "<p>Couldn't load event: " + OI.esc(err.message) + "</p>";
+  });
+
+  function counts() {
+    var c = { accepted: 0, declined: 0, maybe: 0, pending: 0, heads: 0 };
+    guests.forEach(function (g) {
+      var s = g.rsvpStatus || "pending";
+      if (c[s] == null) s = "pending";
+      c[s]++;
+      if (s === "accepted") c.heads += 1 + (g.partySize || 0);
+    });
+    return c;
+  }
+
+  function guestLink(g) { return OI.rsvpUrl(eventId, g.id, g.token); }
+
+  function render() {
+    var app = document.getElementById("app");
+    var c = counts();
+    var html = "";
+
+    html += '<div class="invite-card"><div class="invite-hero" style="background:linear-gradient(135deg,' +
+      OI.THEMES[ev.theme].bg + "," + OI.THEMES[ev.theme].bg2 + ')">' +
+      "<h1>" + OI.esc(ev.title) + "</h1><div>" + OI.esc(ev.hostName || "") + "</div></div>" +
+      '<div class="invite-body">' +
+      '<div class="detail"><span class="k">When</span><span>' + OI.esc(OI.fmtDate(ev.startsAt) + " at " + OI.fmtTime(ev.startsAt)) + "</span></div>" +
+      (ev.location ? '<div class="detail"><span class="k">Where</span><span>' + OI.esc(ev.location) + "</span></div>" : "") +
+      (ev.description ? "<p>" + OI.esc(ev.description) + "</p>" : "") +
+      "</div></div>";
+
+    html += '<div class="stats">' +
+      stat(c.accepted, "Accepted") + stat(c.maybe, "Maybe") +
+      stat(c.declined, "Declined") + stat(c.pending, "Pending") + "</div>";
+    html += '<p class="muted center">Expected heads (incl. +1s): <b>' + c.heads + "</b> · " + guests.length + " invited</p>";
+
+    if (!isOwner) {
+      html += '<div class="card"><p class="muted">You are viewing this event as a guest. Only the host (this browser) can manage it.</p></div>';
+    } else {
+      html += '<div class="card"><h2>Send invitations</h2>' +
+        '<p class="muted">Emails go out from your Resend account. Each guest gets a personal RSVP link.</p>' +
+        '<div class="row"><button class="btn" id="btnSendAll">Send to all pending</button>' +
+        '<button class="btn secondary" id="btnRemind">Remind non-responders</button></div>' +
+        '<p class="muted" id="sendStatus"></p></div>';
+
+      html += '<div class="card"><h2>Add guests</h2>' +
+        '<div class="row"><div><label>Name</label><input type="text" id="gName" placeholder="Ada Lovelace"></div>' +
+        '<div><label>Email</label><input type="email" id="gEmail" placeholder="ada@example.com"></div></div>' +
+        '<div style="margin-top:12px"><button class="btn small" id="btnAddGuest">Add guest</button></div>' +
+        '<label style="margin-top:20px">Import CSV <span class="muted" style="font-weight:400">(name,email per line)</span></label>' +
+        '<textarea id="gCsv" placeholder="Ada Lovelace, ada@example.com&#10;Grace Hopper, grace@example.com"></textarea>' +
+        '<div style="margin-top:12px"><button class="btn small secondary" id="btnImportCsv">Import</button> ' +
+        '<button class="btn small secondary" id="btnExportCsv">Export RSVPs (.csv)</button></div></div>';
+    }
+
+    html += '<div class="card"><h2>Guest list</h2>';
+    if (!guests.length) html += '<p class="muted">No guests yet.</p>';
+    else {
+      html += '<table class="guests"><tr><th>Name</th><th>Status</th><th>+1s</th>' +
+        (isOwner ? "<th>Link</th><th></th>" : "") + "</tr>";
+      guests.forEach(function (g) {
+        var s = g.rsvpStatus || "pending";
+        html += "<tr><td>" + OI.esc(g.name) + "</td>" +
+          '<td><span class="pill ' + s + '">' + s + "</span></td>" +
+          "<td>" + (g.partySize || 0) + "</td>";
+        if (isOwner) {
+          html += '<td><button class="btn small secondary" data-copy="' + OI.esc(guestLink(g)) + '">Copy link</button></td>' +
+            '<td><button class="btn small secondary" data-resend="' + g.id + '">Resend</button> ' +
+            '<button class="btn small secondary" data-del="' + g.id + '">✕</button></td>';
+        }
+        html += "</tr>";
+      });
+      html += "</table>";
+    }
+    html += "</div>";
+    app.innerHTML = html;
+    bind();
+  }
+  function stat(n, label) { return '<div class="stat"><b>' + n + "</b><span>" + label + "</span></div>"; }
+
+  function bind() {
+    function on(id, fn) { var el = document.getElementById(id); if (el) el.onclick = fn; }
+    document.querySelectorAll("[data-copy]").forEach(function (b) {
+      b.onclick = function () {
+        navigator.clipboard.writeText(b.getAttribute("data-copy"))
+          .then(function () { OI.toast("RSVP link copied"); });
+      };
+    });
+    document.querySelectorAll("[data-resend]").forEach(function (b) {
+      b.onclick = function () { sendMail("sendInvitations", [b.getAttribute("data-resend")]); };
+    });
+    document.querySelectorAll("[data-del]").forEach(function (b) {
+      b.onclick = function () {
+        if (!confirm("Remove this guest?")) return;
+        OI.db.collection("events").doc(eventId).collection("guests")
+          .doc(b.getAttribute("data-del")).delete().catch(function (e) { OI.toast(e.message); });
+      };
+    });
+    on("btnAddGuest", function () {
+      var name = document.getElementById("gName").value.trim();
+      var email = document.getElementById("gEmail").value.trim();
+      if (!name) { OI.toast("Name is required"); return; }
+      addGuests([{ name: name, email: email }]);
+      document.getElementById("gName").value = "";
+      document.getElementById("gEmail").value = "";
+    });
+    on("btnImportCsv", function () {
+      var rows = OI.parseCSV(document.getElementById("gCsv").value);
+      if (!rows.length) { OI.toast("Nothing to import"); return; }
+      addGuests(rows);
+      document.getElementById("gCsv").value = "";
+    });
+    on("btnExportCsv", function () {
+      var csv = "name,status,plus_ones,dietary,message\n" + guests.map(function (g) {
+        return [g.name, g.rsvpStatus || "pending", g.partySize || 0,
+          (g.dietary || "").replace(/"/g, '""'), (g.message || "").replace(/"/g, '""')]
+          .map(function (v) { return '"' + v + '"'; }).join(",");
+      }).join("\n");
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+      a.download = "rsvps.csv"; a.click();
+    });
+    on("btnSendAll", function () {
+      var pending = guests.filter(function (g) { return !g.rsvpStatus || g.rsvpStatus === "pending"; })
+        .map(function (g) { return g.id; });
+      if (!pending.length) { OI.toast("Everyone has responded"); return; }
+      sendMail("sendInvitations", pending);
+    });
+    on("btnRemind", function () {
+      var pending = guests.filter(function (g) { return !g.rsvpStatus || g.rsvpStatus === "pending"; })
+        .map(function (g) { return g.id; });
+      if (!pending.length) { OI.toast("Everyone has responded"); return; }
+      sendMail("sendReminders", pending);
+    });
+  }
+
+  function addGuests(rows) {
+    var batch = OI.db.batch();
+    var col = OI.db.collection("events").doc(eventId).collection("guests");
+    rows.forEach(function (r) {
+      var ref = col.doc();
+      var token = OI.newToken();
+      batch.set(ref, {
+        name: r.name, token: token, rsvpStatus: "pending", partySize: 0,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      if (r.email) batch.set(ref.collection("private").doc("contact"), { email: r.email });
+    });
+    batch.commit().then(function () { OI.toast(rows.length + " guest(s) added"); })
+      .catch(function (e) { OI.toast("Couldn't add guests: " + e.message); });
+  }
+
+  function sendMail(fnName, guestIds) {
+    var st = document.getElementById("sendStatus");
+    if (st) st.textContent = "Sending…";
+    OI.functions.httpsCallable(fnName)({ eventId: eventId, guestIds: guestIds })
+      .then(function (res) {
+        var d = res.data || {};
+        if (st) st.textContent = "Sent " + (d.sent || 0) + " of " + guestIds.length +
+          (d.failed ? " (" + d.failed + " failed)" : "") + ".";
+        OI.toast("Done");
+      })
+      .catch(function (err) {
+        if (st) st.textContent = "";
+        OI.toast("Send failed: " + err.message);
+      });
+  }
+})();
+</script>
+</body>
+</html>
