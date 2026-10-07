@@ -150,6 +150,8 @@ node admin.js stats --event <ID>                             # the funnel
 
 A full runbook lives in `~/workspace/skills/open-invite/SKILL.md`. Guardrail: never send without the user confirming the exact recipient list.
 
+> **AI agents:** `AGENTS.md` at the repo root is the canonical orchestration manual — setup, full flow, guardrails, troubleshooting, and an example session. The workspace skill above is a thin local supplement; if they disagree, `AGENTS.md` wins.
+
 ## Roadmap
 
 - [x] Cover images (upload or AI-generated) via Firebase Storage
