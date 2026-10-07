@@ -45,6 +45,10 @@
     <label>Theme</label>
     <div class="theme-grid" id="themeGrid"></div>
 
+    <label style="margin-top:20px">Cover image <span class="muted" style="font-weight:400">(optional — upload a photo, or ask Muse to generate one)</span></label>
+    <input type="file" id="fCover" accept="image/*">
+    <img id="coverPreview" alt="" style="display:none;max-width:100%;border-radius:12px;margin-top:8px;">
+
     <div style="margin-top:28px">
       <button class="btn" id="btnCreate">Continue → add guests</button>
     </div>
@@ -64,10 +68,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="/app.js"></script>
 <script>
 (function () {
   var theme = "confetti";
+  var coverFile = null;
   var grid = document.getElementById("themeGrid");
   Object.keys(OI.THEMES).forEach(function (key) {
     var t = OI.THEMES[key];
@@ -84,6 +90,17 @@
       renderPreview();
     };
     grid.appendChild(d);
+  });
+
+  document.getElementById("fCover").addEventListener("change", function (e) {
+    var f = e.target.files[0];
+    coverFile = f || null;
+    var pv = document.getElementById("coverPreview");
+    if (f) {
+      pv.src = URL.createObjectURL(f);
+      pv.style.display = "block";
+    } else { pv.style.display = "none"; }
+    renderPreview();
   });
 
   function val(id) { return document.getElementById(id).value.trim(); }
@@ -119,7 +136,9 @@
       ? firebase.firestore.Timestamp.fromDate(new Date(val("fDeadline") + "T23:59")) : null;
     OI.initFirebase();
     OI.ensureHost().then(function (uid) {
-      return OI.db.collection("events").add({
+      // Client-generated id so the cover can upload to covers/{id}/ first.
+      var ref = OI.db.collection("events").doc();
+      var data = {
         title: val("fTitle"), hostName: val("fHost") || "",
         startsAt: startsAt, location: val("fLocation"),
         locationUrl: val("fLocationUrl"), description: val("fDesc"),
@@ -127,7 +146,18 @@
         allowMaybe: document.getElementById("fMaybe").checked,
         theme: theme, published: true,
         ownerUid: uid, createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      };
+      function save(url) {
+        if (url) data.coverImageUrl = url;
+        return ref.set(data).then(function () { return ref; });
+      }
+      if (coverFile) {
+        btn.textContent = "Uploading cover…";
+        return OI.storage.ref("covers/" + ref.id + "/cover").put(coverFile)
+          .then(function (snap) { return snap.ref.getDownloadURL(); })
+          .then(save);
+      }
+      return save(null);
     }).then(function (ref) {
       location.href = "/event.html?id=" + ref.id;
     }).catch(function (err) {

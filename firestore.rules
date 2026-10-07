@@ -26,7 +26,7 @@ service cloud.firestore {
           || (request.resource.data.token == resource.data.token
               && request.resource.data.diff(resource.data).affectedKeys()
                  .hasOnly(['rsvpStatus', 'partySize', 'dietary', 'message',
-                           'respondedAt', 'token']));
+                           'respondedAt', 'linkOpenedAt', 'token']));
 
         // Contact details (email/phone): owner-only.
         match /private/contact {

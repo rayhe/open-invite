@@ -69,12 +69,44 @@
 
   function guestLink(g) { return OI.rsvpUrl(eventId, g.id, g.token); }
 
+  // Analytics funnel: Sent -> Delivered -> Opened -> Visited -> Responded
+  function funnel() {
+    var f = { sent: 0, delivered: 0, opened: 0, visited: 0, responded: 0 };
+    guests.forEach(function (g) {
+      if (g.invitedAt) f.sent++;
+      if (g.deliveryStatus === "delivered" || g.deliveredAt) f.delivered++;
+      if (g.emailOpenedAt) f.opened++;
+      if (g.linkOpenedAt || g.linkClickedAt) f.visited++;
+      if (g.rsvpStatus && g.rsvpStatus !== "pending") f.responded++;
+    });
+    return f;
+  }
+
+  function fmtTs(ts) {
+    if (!ts) return "";
+    var d = ts.toDate ? ts.toDate() : new Date(ts.seconds * 1000);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " " +
+      d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+
+  function trackCell(g) {
+    var bits = [];
+    var ds = g.deliveryStatus || (g.invitedAt ? "sent" : "—");
+    var icon = ds === "delivered" ? "📬" : ds === "bounced" ? "⚠️" : ds === "sent" ? "📤" : "—";
+    bits.push('<span title="Delivery: ' + OI.esc(ds) + (g.deliveredAt ? " · " + OI.esc(fmtTs(g.deliveredAt)) : "") + '">' + icon + "</span>");
+    if (g.emailOpenedAt) bits.push('<span title="Email opened ' + OI.esc(fmtTs(g.emailOpenedAt)) + '">👁</span>');
+    if (g.linkOpenedAt || g.linkClickedAt) bits.push('<span title="RSVP link visited ' + OI.esc(fmtTs(g.linkOpenedAt || g.linkClickedAt)) + '">🔗</span>');
+    return bits.join(" ");
+  }
+
   function render() {
     var app = document.getElementById("app");
     var c = counts();
     var html = "";
 
-    html += '<div class="invite-card"><div class="invite-hero" style="background:linear-gradient(135deg,' +
+    html += '<div class="invite-card">' +
+      (ev.coverImageUrl ? '<img src="' + OI.esc(ev.coverImageUrl) + '" alt="" style="width:100%;max-height:240px;object-fit:cover;display:block;" />' : "") +
+      '<div class="invite-hero" style="background:linear-gradient(135deg,' +
       OI.THEMES[ev.theme].bg + "," + OI.THEMES[ev.theme].bg2 + ')">' +
       "<h1>" + OI.esc(ev.title) + "</h1><div>" + OI.esc(ev.hostName || "") + "</div></div>" +
       '<div class="invite-body">' +
@@ -87,6 +119,17 @@
       stat(c.accepted, "Accepted") + stat(c.maybe, "Maybe") +
       stat(c.declined, "Declined") + stat(c.pending, "Pending") + "</div>";
     html += '<p class="muted center">Expected heads (incl. +1s): <b>' + c.heads + "</b> · " + guests.length + " invited</p>";
+
+    // Delivery analytics funnel (Paperless Post-style tracking page)
+    var f = funnel();
+    if (f.sent > 0) {
+      html += '<div class="card"><h2>Invitation funnel</h2>' +
+        '<div class="stats">' +
+        stat(f.sent, "Sent") + stat(f.delivered, "Delivered") +
+        stat(f.opened, "Opened") + stat(f.visited, "Link visited") +
+        stat(f.responded, "Responded") + "</div>" +
+        '<p class="muted" style="margin-bottom:0">Delivery + opens via Resend webhooks (enable open tracking in Resend → Domains). Link visits are recorded when a guest opens their RSVP link. Bounced emails show ⚠️ in the guest list.</p></div>';
+    }
 
     if (!isOwner) {
       html += '<div class="card"><p class="muted">You are viewing this event as a guest. Only the host (this browser) can manage it.</p></div>';
@@ -110,13 +153,23 @@
     html += '<div class="card"><h2>Guest list</h2>';
     if (!guests.length) html += '<p class="muted">No guests yet.</p>';
     else {
-      html += '<table class="guests"><tr><th>Name</th><th>Status</th><th>+1s</th>' +
+      html += '<table class="guests"><tr><th>Name</th><th>Status</th><th>+1s</th><th>Tracking</th>' +
         (isOwner ? "<th>Link</th><th></th>" : "") + "</tr>";
       guests.forEach(function (g) {
         var s = g.rsvpStatus || "pending";
-        html += "<tr><td>" + OI.esc(g.name) + "</td>" +
-          '<td><span class="pill ' + s + '">' + s + "</span></td>" +
-          "<td>" + (g.partySize || 0) + "</td>";
+        html += "<tr><td>" + OI.esc(g.name) + "</td>";
+        if (isOwner) {
+          // Manual status override (Paperless Post lets hosts set this too,
+          // e.g. when someone replies by text instead of clicking the link)
+          html += '<td><select data-status="' + g.id + '" style="font-size:13px;padding:4px;">' +
+            ["pending", "accepted", "maybe", "declined"].map(function (o) {
+              return '<option value="' + o + '"' + (o === s ? " selected" : "") + ">" + o + "</option>";
+            }).join("") + "</select></td>";
+        } else {
+          html += '<td><span class="pill ' + s + '">' + s + "</span></td>";
+        }
+        html += "<td>" + (g.partySize || 0) + "</td>" +
+          "<td>" + trackCell(g) + "</td>";
         if (isOwner) {
           html += '<td><button class="btn small secondary" data-copy="' + OI.esc(guestLink(g)) + '">Copy link</button></td>' +
             '<td><button class="btn small secondary" data-resend="' + g.id + '">Resend</button> ' +
@@ -142,6 +195,15 @@
     });
     document.querySelectorAll("[data-resend]").forEach(function (b) {
       b.onclick = function () { sendMail("sendInvitations", [b.getAttribute("data-resend")]); };
+    });
+    document.querySelectorAll("[data-status]").forEach(function (sel) {
+      sel.onchange = function () {
+        OI.db.collection("events").doc(eventId).collection("guests")
+          .doc(sel.getAttribute("data-status"))
+          .update({ rsvpStatus: sel.value, respondedAt: firebase.firestore.FieldValue.serverTimestamp() })
+          .then(function () { OI.toast("Status updated"); })
+          .catch(function (e) { OI.toast("Couldn't update: " + e.message); });
+      };
     });
     document.querySelectorAll("[data-del]").forEach(function (b) {
       b.onclick = function () {

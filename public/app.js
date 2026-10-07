@@ -11,7 +11,7 @@
     minimal:  { name: "Minimal", bg: "#111111", bg2: "#333333", dots: ["#111111", "#888888", "#e8e8e8"] }
   };
 
-  var app = null, auth = null, db = null, functions = null;
+  var app = null, auth = null, db = null, functions = null, storage = null;
 
   function initFirebase() {
     if (!window.FIREBASE_CONFIG || !window.FIREBASE_CONFIG.apiKey ||
@@ -22,7 +22,8 @@
     auth = firebase.auth();
     db = firebase.firestore();
     functions = firebase.functions();
-    return { app: app, auth: auth, db: db, functions: functions };
+    storage = firebase.storage ? firebase.storage() : null;
+    return { app: app, auth: auth, db: db, functions: functions, storage: storage };
   }
 
   // Anonymous sign-in; returns the persistent uid for this browser.
@@ -123,6 +124,7 @@
     toast: toast, esc: esc, fmtDate: fmtDate, fmtTime: fmtTime,
     newToken: newToken, rsvpUrl: rsvpUrl, downloadICS: downloadICS,
     parseCSV: parseCSV, applyTheme: applyTheme,
-    get db() { return db; }, get auth() { return auth; }, get functions() { return functions; }
+    get db() { return db; }, get auth() { return auth; }, get functions() { return functions; },
+    get storage() { return storage; }
   };
 })();
